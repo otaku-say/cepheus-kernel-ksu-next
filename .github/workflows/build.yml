@@ -36,18 +36,9 @@ jobs:
             sed -i '1i source "drivers/kernelsu/Kconfig"' drivers/Kconfig
           fi
 
-          # init/main.c: 引入头文件并在 start_kernel 里调用 ksu_init()
-          # 头文件实际在 drivers/kernelsu/include/ksu.h
-          grep -q 'kernelsu/include/ksu.h' init/main.c || \
-            sed -i '1i #include "../drivers/kernelsu/include/ksu.h"' init/main.c
-          if ! grep -q 'ksu_init();' init/main.c; then
-            awk '
-              /^asmlinkage __visible void __init start_kernel\(void\)$/ { in_func = 1 }
-              in_func && !injected && /^\{/ { print; print "\tksu_init();"; injected = 1; in_func = 0; next }
-              { print }
-            ' init/main.c > /tmp/main.c.new
-            mv /tmp/main.c.new init/main.c
-          fi
+          # KernelSU Next 采用 late-load 模式（见 ksu.h 的 ksu_late_loaded），
+          # 由驱动自身在初始化时接管，不需要修改 init/main.c。
+          #   —— 早期版本注入的 ksu_init() 在这个版本里已不存在，强行注入会编译失败。
 
           # defconfig
           grep -q '^CONFIG_KSU=y' arch/arm64/configs/cepheus_defconfig || echo 'CONFIG_KSU=y' >> arch/arm64/configs/cepheus_defconfig
