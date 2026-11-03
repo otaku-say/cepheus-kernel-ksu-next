@@ -46,6 +46,9 @@ jobs:
           # （fs/read_write.c 的 ksu_handle_vfs_read 等），它们引用的符号新版
           # KSU 在 kprobes 模式下不再提供，会让链接期 undefined。这些调用点
           # 由 kprobes hook 完全取代，直接禁用。
+          # 记录内核侧版本号：shallow clone 没有 commit 历史/tag，Kbuild 会把
+          # KSU_VERSION 回退成 1，Manager 直接判版本过低拒绝工作。这里把版本
+          # 钉到与 Manager v3.4.2 (versionCode 33355) 对齐。
           DEFCONFIG=arch/arm64/configs/cepheus_defconfig
           for opt in CONFIG_KSU=y CONFIG_KPROBES=y CONFIG_HAVE_KPROBES=y \
                      CONFIG_KPROBE_EVENTS=y CONFIG_KRETPROBES=y; do
@@ -109,6 +112,8 @@ jobs:
           # 而 AnyKernel3 只替换 kernel，dtbo 分区保持原样即可。
           make -j$(nproc) O=out Image.gz-dtb \
             ARCH=arm64 \
+            KSU_VERSION_OVERRIDE=33355 \
+            KSU_VERSION_TAG_OVERRIDE=v3.4.2 \
             CC=clang \
             CLANG_TRIPLE=aarch64-linux-gnu- \
             CROSS_COMPILE=aarch64-linux-gnu- \
