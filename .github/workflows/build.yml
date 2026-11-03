@@ -49,32 +49,27 @@ jobs:
           grep -q 'kernelsu' drivers/Makefile
           grep -q 'drivers/kernelsu/Kconfig' drivers/Kconfig
 
-          # 走 KPROBES hook 模式（自包含，不需要往内核里手插 hook）。
-          # 代价：crDroid 内核里还有旧版 KernelSU 留下的 #ifdef CONFIG_KSU 调用点
-          # （fs/read_write.c 的 ksu_handle_vfs_read 等），它们引用的符号新版
-          # KSU 在 kprobes 模式下不再提供，会让链接期 undefined。这些调用点
-          # 由 kprobes hook 完全取代，直接禁用。
-          # 记录内核侧版本号：shallow clone 没有 commit 历史/tag，Kbuild 会把
-          # KSU_VERSION 回退成 1，Manager 直接判版本过低拒绝工作。这里把版本
-          # 钉到与 Manager v3.4.2 (versionCode 33355) 对齐。
+          # crDroid 内核的 hook 点是 manual hook 模型（fs/exec.c、fs/read_write.c、
+          # fs/stat.c、fs/open.c、drivers/input/input.c 里都有 #ifdef CONFIG_KSU 的
+          # 调用点），所以必须走 manual hook；用 kprobes 会让这些调用点找不到符号，
+          # 而且 ksud 的 init 注入也不会发生（su 无法进入 PATH）。
           DEFCONFIG=arch/arm64/configs/cepheus_defconfig
-          for opt in CONFIG_KSU=y CONFIG_KPROBES=y CONFIG_HAVE_KPROBES=y \
-                     CONFIG_KPROBE_EVENTS=y CONFIG_KRETPROBES=y; do
+          for opt in CONFIG_KSU=y CONFIG_KSU_MANUAL_HOOK=y; do
             grep -qx "$opt" "$DEFCONFIG" || echo "$opt" >> "$DEFCONFIG"
           done
 
-          for f in drivers/input/input.c fs/exec.c fs/read_write.c fs/stat.c fs/open.c; do
-            [ -f "$f" ] || continue
-            sed -i 's|^#ifdef CONFIG_KSU$|#if 0 /* legacy KSU hook, replaced by KSU kprobes */|' "$f"
-          done
-          echo '--- 已禁用的旧 hook 文件 ---'
-          grep -rn 'legacy KSU hook' drivers/input/input.c fs/*.c 2>/dev/null | head
+          # KSU 用 kernel/reboot.c 里有没有 ksu_handle_sys_reboot 判断 manual hook
+          # 是否已集成（HAVE_KSU_HOOK），没有就直接 $(error) 中断构建。补上它。
+          if ! grep -q 'ksu_handle_sys_reboot' kernel/reboot.c; then
+            python3 -c "import pathlib;p=pathlib.Path('kernel/reboot.c');s=p.read_text();s=s.replace('#include <linux/uaccess.h>','#include <linux/uaccess.h>\\nextern int ksu_handle_sys_reboot(int magic1, int magic2, unsigned int cmd, void __user **arg);',1);s=s.replace('\\tchar buffer[256];\\n\\tint ret = 0;','\\tchar buffer[256];\\n\\tint ret = 0;\\n\\n\\tksu_handle_sys_reboot(magic1, magic2, cmd, &arg);',1);p.write_text(s)"
+          fi
+          echo '--- reboot.c hook count ---'
+          grep -c 'ksu_handle_sys_reboot' kernel/reboot.c
 
           # KSU 的 Kbuild 会往 fs/namespace.c 注入 path_umount()/can_umount()，
-          # 但 kbuild 解析 drivers/* 时 fs/ 早就编译完了：结果是源文件被改、
-          # KSU_HAS_PATH_UMOUNT 被定义，而 .o 里根本没有该函数，链接失败。
-          # 4.14 本来就走 kernel_umount.c 的 #else 分支（ksu_sys_umount），
-          # 所以直接把注入关掉。
+          # 但 kbuild 解析 drivers/* 时 fs/ 早就编译完了：源文件被改、
+          # KSU_HAS_PATH_UMOUNT 被定义，而 .o 里根本没有该函数。4.14 本来就走
+          # kernel_umount.c 的 #else 分支（ksu_sys_umount），直接关掉注入。
           KBUILD=drivers/kernelsu/Kbuild
           sed -i 's|^\$(shell sed -i .*/\^static bool is_mnt_ns_file/i .*|# &|' "$KBUILD"
           sed -i 's|^ccflags-y += -DKSU_HAS_PATH_UMOUNT|# &|' "$KBUILD"
