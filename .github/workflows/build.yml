@@ -1,0 +1,69 @@
+name: Build KernelSU-Next Kernel (cepheus)
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Clone kernel source (crDroid 14.0) + KernelSU Next
+        run: |
+          set -e
+          git clone --depth=1 -b 14.0 https://github.com/crdroidandroid/android_kernel_xiaomi_cepheus kernel
+          cd kernel
+          # KernelSU Next 官方非 GKI 集成脚本
+          curl -LSs "https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/next/kernel/setup.sh" | bash -s next
+          echo "--- KSU 集成检查 ---"
+          grep -rn "KSU" Makefile | head -3 || true
+          ls KernelSU-Next 2>/dev/null | head -3 || echo "KernelSU-Next dir missing"
+
+      - name: Setup clang toolchain
+        run: |
+          git clone --depth=1 https://github.com/kdrag0n/proton-clang.git
+
+      - name: Show clang version
+        run: ./proton-clang/bin/clang --version | head -2
+
+      - name: Build kernel
+        run: |
+          set -e
+          cd kernel
+          export ARCH=arm64
+          export PATH="${{ github.workspace }}/proton-clang/bin:$PATH"
+          make O=out vendor/cepheus_defconfig
+          make -j$(nproc) O=out \
+            ARCH=arm64 \
+            CC=clang \
+            CLANG_TRIPLE=aarch64-linux-gnu- \
+            CROSS_COMPILE=aarch64-linux-gnu- \
+            CROSS_COMPILE_ARM32=arm-linux-gnueabi-
+
+      - name: Collect kernel image
+        run: |
+          ls -lh kernel/out/arch/arm64/boot/
+          cp kernel/out/arch/arm64/boot/Image.gz-dtb /tmp/Image.gz-dtb 2>/dev/null || \
+          cp kernel/out/arch/arm64/boot/Image.gz /tmp/Image.gz || \
+          cp kernel/out/arch/arm64/boot/Image /tmp/Image
+          ls -lh /tmp/Image*
+
+      - name: Package with AnyKernel3
+        run: |
+          git clone --depth=1 https://github.com/osm0sis/AnyKernel3.git
+          cp /tmp/Image* AnyKernel3/
+          cd AnyKernel3
+          sed -i 's/^kernel.string=.*/kernel.string=KernelSU-Next cepheus/' anykernel.sh 2>/dev/null || true
+          zip -r9 ../cepheus-ksu-next.zip . -x '.git/*'
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: cepheus-ksu-next
+          path: cepheus-ksu-next.zip
+          retention-days: 30
