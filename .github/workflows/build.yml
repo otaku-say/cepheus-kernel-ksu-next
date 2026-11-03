@@ -24,7 +24,15 @@ jobs:
           cd kernel
           # 旧内核（4.14）必须用 legacy 分支：dev 分支的 hook 依赖 5.10+ 的
           # pt_regs 系统调用 ABI，在 4.14 上编译不过也不工作。
-          git clone --depth=1 -b legacy https://github.com/KernelSU-Next/KernelSU-Next /tmp/ksu-src
+          # 钉到 legacy 分支上最后一个 UAPI=5 的提交 e3292239。legacy HEAD 的
+          # KERNEL_SU_UAPI_VERSION 已经是 6，而 Manager v3.4.2 只认 UAPI 5，
+          # 内核比管理器新会让管理器弹"管理器版本过低，请升到 6"并拒绝工作。
+          KSU_COMMIT=e3292239f3b8384cc52bdc6f23995d643271a7ce
+          git clone --filter=blob:none --no-checkout -b legacy \
+            https://github.com/KernelSU-Next/KernelSU-Next /tmp/ksu-src
+          git -C /tmp/ksu-src checkout -q "$KSU_COMMIT"
+          echo "--- KSU UAPI 版本 ---"
+          grep -E 'KSU_UAPI_VERSION' /tmp/ksu-src/uapi/supercall.h
           rm -rf drivers/kernelsu
           mkdir -p drivers/kernelsu
           cp -a /tmp/ksu-src/kernel/. drivers/kernelsu/
