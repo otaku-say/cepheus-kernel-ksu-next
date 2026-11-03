@@ -37,17 +37,16 @@ jobs:
       - name: Show clang version
         run: ./proton-clang/bin/clang --version | head -2
 
-      - name: Patch dtc Makefile to link libyaml
+      - name: Force dtc without YAML
         run: |
           cd kernel
           echo "--- before ---"
-          grep -n "HOSTLDLIBS\|yamltree" scripts/dtc/Makefile | head -5
-          # 该内核回移了 5.x 的 dtc（含 YAML），但 Makefile 没链 libyaml
-          sed -i 's|^HOSTLDLIBS_dtc.*|HOSTLDLIBS_dtc := -lyaml|' scripts/dtc/Makefile
-          grep -q "HOSTLDLIBS_dtc" scripts/dtc/Makefile || \
-            echo 'HOSTLDLIBS_dtc := -lyaml' >> scripts/dtc/Makefile
+          sed -n '10,20p' scripts/dtc/Makefile
+          # Makefile 用 pkg-config 探测 libyaml；CI 有 libyaml-dev 就编 yamltree，
+          # 但编译 dtb 根本不需要 YAML 输出。把探测条件改成恒真，走 -DNO_YAML 分支。
+          sed -i 's|^ifeq.*yaml-0\.1.*|ifeq (yes,yes)|' scripts/dtc/Makefile
           echo "--- after ---"
-          grep -n "HOSTLDLIBS_dtc" scripts/dtc/Makefile
+          sed -n '10,20p' scripts/dtc/Makefile
 
       - name: Build kernel
         run: |
