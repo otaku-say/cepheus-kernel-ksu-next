@@ -154,6 +154,31 @@ jobs:
             HOSTCC=gcc \
             HOSTCXX=g++
 
+      - name: Verify KSU hooks are actually compiled in
+        if: ${{ inputs.ksu != false }}
+        run: |
+          set -e
+          cd kernel
+          echo "=== 调用点是否引用了 KSU 符号（每条都应有输出）==="
+          for f in fs/exec.o fs/open.o fs/stat.o fs/read_write.o drivers/input/input.o kernel/reboot.o; do
+            printf '%-28s ' "$f"
+            if [ -f "out/$f" ]; then
+              n=$(nm "out/$f" 2>/dev/null | grep -c ' U ksu_' || true)
+              echo "undef ksu_ syms = $n"
+            else
+              echo "MISSING OBJECT"
+            fi
+          done
+          echo
+          echo "=== KSU 侧是否定义了这些符号 ==="
+          for s in ksu_handle_execveat ksu_handle_faccessat ksu_handle_stat ksu_handle_vfs_read ksu_handle_sys_reboot ksu_handle_input_handle_event ksu_handle_newfstat_ret; do
+            printf '%-34s ' "$s"
+            nm out/drivers/kernelsu/built-in.o 2>/dev/null | grep -E " (T|t) $s\$" | head -1 || echo "NOT DEFINED"
+          done
+          echo
+          echo "=== .config 里的 KSU 相关开关 ==="
+          grep -E '^CONFIG_(KSU|KSU_|KPROBES|KRETPROBES)' out/.config || true
+
       - name: Collect kernel image
         run: |
           ls -lh kernel/out/arch/arm64/boot/
