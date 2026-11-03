@@ -2,6 +2,11 @@ name: Build KernelSU-Next Kernel (cepheus)
 
 on:
   workflow_dispatch:
+    inputs:
+      ksu:
+        description: '集成 KernelSU Next（false = 纯净内核，给 Magisk 用）'
+        type: boolean
+        default: true
   push:
     branches: [main]
 
@@ -19,6 +24,7 @@ jobs:
           git clone --depth=1 -b 14.0 https://github.com/crdroidandroid/android_kernel_xiaomi_cepheus kernel
 
       - name: Integrate KernelSU Next (legacy branch, non-GKI)
+        if: ${{ inputs.ksu != false }}
         run: |
           set -e
           cd kernel
@@ -74,6 +80,15 @@ jobs:
           sed -i 's|^\$(shell sed -i .*/\^static bool is_mnt_ns_file/i .*|# &|' "$KBUILD"
           sed -i 's|^ccflags-y += -DKSU_HAS_PATH_UMOUNT|# &|' "$KBUILD"
 
+      - name: Ensure KSU is disabled (pure kernel build)
+        if: ${{ inputs.ksu == false }}
+        run: |
+          cd kernel
+          DEFCONFIG=arch/arm64/configs/cepheus_defconfig
+          # 原厂 defconfig 自带 CONFIG_KSU=y 吗？有就注释掉，保证内核里没有 KSU
+          sed -i 's|^CONFIG_KSU=y|# CONFIG_KSU is not set|' "$DEFCONFIG"
+          grep -n 'CONFIG_KSU' "$DEFCONFIG" || true
+
       - name: Install build dependencies
         run: |
           sudo apt-get update
@@ -107,8 +122,14 @@ jobs:
           export PATH="${{ github.workspace }}/proton-clang/bin:$PATH"
           make O=out ARCH=arm64 cepheus_defconfig
           # 快速失败：Kconfig 没生效时立刻退出，不浪费十几分钟编译
-          grep -qx 'CONFIG_KSU=y' out/.config || {
-            echo 'FATAL: CONFIG_KSU 没有进入 .config'; grep -i ksu out/.config; exit 1; }
+          if [ "${{ inputs.ksu }}" != "false" ]; then
+            grep -qx 'CONFIG_KSU=y' out/.config || {
+              echo 'FATAL: CONFIG_KSU 没有进入 .config'; grep -i ksu out/.config; exit 1; }
+          else
+            grep -qx 'CONFIG_KSU=y' out/.config && {
+              echo 'FATAL: 纯内核模式仍启用了 CONFIG_KSU'; exit 1; } || true
+            echo 'pure kernel: CONFIG_KSU 已禁用'
+          fi
           grep -qx 'CONFIG_KPROBES=y' out/.config || echo 'WARN: KPROBES 未开启，KSU 将退化为 manual hook'
           # 用 LLVM=1 让 make 自动使用 clang 的工具链，避免手写交叉前缀
           # 只构建 Image.gz-dtb：dtbo.img 的生成脚本依赖 python2（Ubuntu 22.04 已移除），
