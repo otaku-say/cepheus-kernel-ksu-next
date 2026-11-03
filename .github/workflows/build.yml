@@ -80,6 +80,17 @@ jobs:
           sed -i 's|^\$(shell sed -i .*/\^static bool is_mnt_ns_file/i .*|# &|' "$KBUILD"
           sed -i 's|^ccflags-y += -DKSU_HAS_PATH_UMOUNT|# &|' "$KBUILD"
 
+          # allow_shell 默认 false（只有 CONFIG_KSU_DEBUG 才置 true）：
+          #   #ifdef CONFIG_KSU_DEBUG
+          #   bool allow_shell = true;  #else  bool allow_shell = false;
+          # 这让 ksu_is_allow_uid_for_current(2000) 恒为 false，sucompat 在
+          # sucompat.c:102 直接 return 0 不做路径重写，shell 的
+          # access("/system/bin/su") 就失败，报 "inaccessible or not found"。
+          sed -i 's/^bool allow_shell = false;$/bool allow_shell = true;/' \
+            drivers/kernelsu/core/init.c
+          echo '--- allow_shell ---'
+          grep -n 'bool allow_shell' drivers/kernelsu/core/init.c
+
       - name: Ensure KSU is disabled (pure kernel build)
         if: ${{ inputs.ksu == false }}
         run: |
