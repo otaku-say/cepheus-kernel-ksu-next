@@ -38,6 +38,17 @@ jobs:
       - name: Show clang version
         run: ./proton-clang/bin/clang --version | head -2
 
+      - name: Enable CONFIG_KSU in defconfig
+        run: |
+          cd kernel
+          DEFCONFIG=arch/arm64/configs/cepheus_defconfig
+          echo "--- 当前 KSU 配置 ---"
+          grep -iE "CONFIG_KSU" "$DEFCONFIG" || echo "(none)"
+          # KernelSU 的代码由 setup.sh 集成，但 defconfig 没开开关
+          grep -q "^CONFIG_KSU=y" "$DEFCONFIG" || echo "CONFIG_KSU=y" >> "$DEFCONFIG"
+          echo "--- 修改后 ---"
+          grep -iE "CONFIG_KSU" "$DEFCONFIG"
+
       - name: Force dtc without YAML
         run: |
           cd kernel
