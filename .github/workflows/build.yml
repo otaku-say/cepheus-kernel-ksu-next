@@ -18,35 +18,32 @@ jobs:
           set -e
           git clone --depth=1 -b 14.0 https://github.com/crdroidandroid/android_kernel_xiaomi_cepheus kernel
 
-      - name: Integrate KernelSU Next manually (non-GKI)
+      - name: Integrate KernelSU Next (legacy branch, non-GKI)
         run: |
           set -e
           cd kernel
-          # 不用 setup.sh：它内部 `git checkout next` 会失败并回退到不带 KSU 的分支。
-          # 直接克隆源码到 drivers/kernelsu 并手工接线。
-          git clone --depth=1 https://github.com/KernelSU-Next/KernelSU-Next /tmp/ksu-src
+          # 旧内核（4.14）必须用 legacy 分支：dev 分支的 hook 依赖 5.10+ 的
+          # pt_regs 系统调用 ABI，在 4.14 上编译不过也不工作。
+          git clone --depth=1 -b legacy https://github.com/KernelSU-Next/KernelSU-Next /tmp/ksu-src
           rm -rf drivers/kernelsu
           cp -r /tmp/ksu-src/kernel drivers/kernelsu
 
-          # drivers/Makefile
-          grep -q "kernelsu" drivers/Makefile || echo 'obj-$(CONFIG_KSU) += kernelsu/' >> drivers/Makefile
+          # crDroid 内核源码本来就接好线了，这里只做断言，不重复改写：
+          #   drivers/Makefile : obj-y += kernelsu/
+          #   drivers/Kconfig  : source "drivers/kernelsu/Kconfig"
+          grep -q 'kernelsu' drivers/Makefile
+          grep -q 'drivers/kernelsu/Kconfig' drivers/Kconfig
 
-          # drivers/Kconfig
-          if ! grep -q "drivers/kernelsu/Kconfig" drivers/Kconfig; then
-            sed -i '1i source "drivers/kernelsu/Kconfig"' drivers/Kconfig
-          fi
+          # KernelSU 的 kprobes hook 需要 KPROBES/KRETPROBES，crDroid 默认没开。
+          # 不开只能退化成 manual hook，功能受限。
+          DEFCONFIG=arch/arm64/configs/cepheus_defconfig
+          for opt in CONFIG_KSU=y CONFIG_KPROBES=y CONFIG_HAVE_KPROBES=y \
+                     CONFIG_KPROBE_EVENTS=y CONFIG_KRETPROBES=y; do
+            grep -qx "$opt" "$DEFCONFIG" || echo "$opt" >> "$DEFCONFIG"
+          done
 
-          # KernelSU Next 采用 late-load 模式（见 ksu.h 的 ksu_late_loaded），
-          # 由驱动自身在初始化时接管，不需要修改 init/main.c。
-          #   —— 早期版本注入的 ksu_init() 在这个版本里已不存在，强行注入会编译失败。
-
-          # defconfig
-          grep -q '^CONFIG_KSU=y' arch/arm64/configs/cepheus_defconfig || echo 'CONFIG_KSU=y' >> arch/arm64/configs/cepheus_defconfig
-
-          echo "--- 集成检查 ---"
-          ls drivers/kernelsu | head -5
-          grep -n 'kernelsu' drivers/Makefile || true
-          grep -n 'CONFIG_KSU' arch/arm64/configs/cepheus_defconfig || true
+          echo "--- defconfig 里的 KSU/KPROBES ---"
+          grep -E 'CONFIG_(KSU|KPROBES|KRETPROBES|HAVE_KPROBES|KPROBE_EVENTS)' "$DEFCONFIG" || true
 
       - name: Install build dependencies
         run: |
@@ -61,17 +58,6 @@ jobs:
 
       - name: Show clang version
         run: ./proton-clang/bin/clang --version | head -2
-
-      - name: Enable CONFIG_KSU in defconfig
-        run: |
-          cd kernel
-          DEFCONFIG=arch/arm64/configs/cepheus_defconfig
-          echo "--- 当前 KSU 配置 ---"
-          grep -iE "CONFIG_KSU" "$DEFCONFIG" || echo "(none)"
-          # KernelSU 的代码由 setup.sh 集成，但 defconfig 没开开关
-          grep -q "^CONFIG_KSU=y" "$DEFCONFIG" || echo "CONFIG_KSU=y" >> "$DEFCONFIG"
-          echo "--- 修改后 ---"
-          grep -iE "CONFIG_KSU" "$DEFCONFIG"
 
       - name: Force dtc without YAML
         run: |
@@ -91,6 +77,10 @@ jobs:
           export ARCH=arm64
           export PATH="${{ github.workspace }}/proton-clang/bin:$PATH"
           make O=out ARCH=arm64 cepheus_defconfig
+          # 快速失败：Kconfig 没生效时立刻退出，不浪费十几分钟编译
+          grep -qx 'CONFIG_KSU=y' out/.config || {
+            echo 'FATAL: CONFIG_KSU 没有进入 .config'; grep -i ksu out/.config; exit 1; }
+          grep -qx 'CONFIG_KPROBES=y' out/.config || echo 'WARN: KPROBES 未开启，KSU 将退化为 manual hook'
           # 用 LLVM=1 让 make 自动使用 clang 的工具链，避免手写交叉前缀
           # 只构建 Image.gz-dtb：dtbo.img 的生成脚本依赖 python2（Ubuntu 22.04 已移除），
           # 而 AnyKernel3 只替换 kernel，dtbo 分区保持原样即可。
