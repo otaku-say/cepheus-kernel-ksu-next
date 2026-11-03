@@ -38,12 +38,8 @@ jobs:
           export ARCH=arm64
           export PATH="${{ github.workspace }}/proton-clang/bin:$PATH"
           make O=out vendor/cepheus_defconfig
-          make -j$(nproc) O=out \
-            ARCH=arm64 \
-            CC=clang \
-            CLANG_TRIPLE=aarch64-linux-gnu- \
-            CROSS_COMPILE=aarch64-linux-gnu- \
-            CROSS_COMPILE_ARM32=arm-linux-gnueabi-
+          # 用 LLVM=1 让 make 自动使用 clang 的工具链，避免手写交叉前缀
+          make -j$(nproc) O=out ARCH=arm64 CC=clang LLVM=1
 
       - name: Collect kernel image
         run: |
