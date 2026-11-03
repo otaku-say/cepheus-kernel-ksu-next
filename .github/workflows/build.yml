@@ -40,7 +40,14 @@ jobs:
           # 头文件实际在 drivers/kernelsu/include/ksu.h
           grep -q 'kernelsu/include/ksu.h' init/main.c || \
             sed -i '1i #include "../drivers/kernelsu/include/ksu.h"' init/main.c
-          grep -q 'ksu_init();' init/main.c || sed -i '/asmlinkage __visible void __init start_kernel(void)/a \	trap_init();\n\tksu_init();' init/main.c
+          if ! grep -q 'ksu_init();' init/main.c; then
+            awk '
+              /^asmlinkage __visible void __init start_kernel\(void\)$/ { in_func = 1 }
+              in_func && !injected && /^\{/ { print; print "\tksu_init();"; injected = 1; in_func = 0; next }
+              { print }
+            ' init/main.c > /tmp/main.c.new
+            mv /tmp/main.c.new init/main.c
+          fi
 
           # defconfig
           grep -q '^CONFIG_KSU=y' arch/arm64/configs/cepheus_defconfig || echo 'CONFIG_KSU=y' >> arch/arm64/configs/cepheus_defconfig
