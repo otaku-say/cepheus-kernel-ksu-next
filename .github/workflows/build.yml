@@ -45,7 +45,9 @@ jobs:
           export PATH="${{ github.workspace }}/proton-clang/bin:$PATH"
           make O=out ARCH=arm64 cepheus_defconfig
           # 用 LLVM=1 让 make 自动使用 clang 的工具链，避免手写交叉前缀
-          make -j$(nproc) O=out ARCH=arm64 CC=clang LLVM=1
+          # 4.14 的 dtc 需要 libyaml；ld.lld 默认不搜 /usr/lib，显式给路径
+          make -j$(nproc) O=out ARCH=arm64 CC=clang LLVM=1 \
+            HOSTLDFLAGS="-L/usr/lib/x86_64-linux-gnu -lyaml"
 
       - name: Collect kernel image
         run: |
