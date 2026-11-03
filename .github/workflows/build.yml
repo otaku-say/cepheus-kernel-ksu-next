@@ -26,7 +26,14 @@ jobs:
           # pt_regs 系统调用 ABI，在 4.14 上编译不过也不工作。
           git clone --depth=1 -b legacy https://github.com/KernelSU-Next/KernelSU-Next /tmp/ksu-src
           rm -rf drivers/kernelsu
-          cp -r /tmp/ksu-src/kernel drivers/kernelsu
+          mkdir -p drivers/kernelsu
+          cp -a /tmp/ksu-src/kernel/. drivers/kernelsu/
+          # kernel/include/uapi 是指向仓库顶层 ../../uapi 的相对 symlink，
+          # 复制后会悬空（drivers/uapi 不存在），必须实体化，否则
+          # policy/allowlist.h 里 #include "uapi/app_profile.h" 直接失败。
+          rm -f drivers/kernelsu/include/uapi
+          cp -a /tmp/ksu-src/uapi drivers/kernelsu/include/uapi
+          test -f drivers/kernelsu/include/uapi/app_profile.h
 
           # crDroid 内核源码本来就接好线了，这里只做断言，不重复改写：
           #   drivers/Makefile : obj-y += kernelsu/
