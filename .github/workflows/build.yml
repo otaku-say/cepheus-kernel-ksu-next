@@ -37,6 +37,18 @@ jobs:
       - name: Show clang version
         run: ./proton-clang/bin/clang --version | head -2
 
+      - name: Patch dtc Makefile to link libyaml
+        run: |
+          cd kernel
+          echo "--- before ---"
+          grep -n "HOSTLDLIBS\|yamltree" scripts/dtc/Makefile | head -5
+          # 该内核回移了 5.x 的 dtc（含 YAML），但 Makefile 没链 libyaml
+          sed -i 's|^HOSTLDLIBS_dtc.*|HOSTLDLIBS_dtc := -lyaml|' scripts/dtc/Makefile
+          grep -q "HOSTLDLIBS_dtc" scripts/dtc/Makefile || \
+            echo 'HOSTLDLIBS_dtc := -lyaml' >> scripts/dtc/Makefile
+          echo "--- after ---"
+          grep -n "HOSTLDLIBS_dtc" scripts/dtc/Makefile
+
       - name: Build kernel
         run: |
           set -e
