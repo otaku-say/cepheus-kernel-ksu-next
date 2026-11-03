@@ -24,6 +24,12 @@ jobs:
           grep -rn "KSU" Makefile | head -3 || true
           ls KernelSU-Next 2>/dev/null | head -3 || echo "KernelSU-Next dir missing"
 
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libyaml-dev flex bison bc libssl-dev
+
       - name: Setup clang toolchain
         run: |
           git clone --depth=1 https://github.com/kdrag0n/proton-clang.git
