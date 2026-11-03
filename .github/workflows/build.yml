@@ -28,7 +28,8 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            libyaml-dev flex bison bc libssl-dev
+            libyaml-dev flex bison bc libssl-dev \
+            gcc-arm-linux-gnueabi
 
       - name: Setup clang toolchain
         run: |
