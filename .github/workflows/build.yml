@@ -32,7 +32,7 @@ jobs:
             https://github.com/KernelSU-Next/KernelSU-Next /tmp/ksu-src
           git -C /tmp/ksu-src checkout -q "$KSU_COMMIT"
           echo "--- KSU UAPI 版本 ---"
-          grep -E 'KSU_UAPI_VERSION' /tmp/ksu-src/uapi/supercall.h
+          grep -E 'UAPI_VERSION' /tmp/ksu-src/uapi/supercall.h || true
           rm -rf drivers/kernelsu
           mkdir -p drivers/kernelsu
           cp -a /tmp/ksu-src/kernel/. drivers/kernelsu/
