@@ -41,14 +41,23 @@ jobs:
           grep -q 'kernelsu' drivers/Makefile
           grep -q 'drivers/kernelsu/Kconfig' drivers/Kconfig
 
-          # 必须走 manual hook，不能开 KPROBES。crDroid 的 fs/read_write.c 里
-          # 硬编码了 #ifdef CONFIG_KSU 的 ksu_handle_vfs_read() 调用点，而 KSU
-          # 只在 manual hook 分支（#else）里提供这些桩函数；开了 KPROBES 就会
-          # 走 kprobes 分支，桩函数不编译 -> 链接期 undefined reference。
+          # 走 KPROBES hook 模式（自包含，不需要往内核里手插 hook）。
+          # 代价：crDroid 内核里还有旧版 KernelSU 留下的 #ifdef CONFIG_KSU 调用点
+          # （fs/read_write.c 的 ksu_handle_vfs_read 等），它们引用的符号新版
+          # KSU 在 kprobes 模式下不再提供，会让链接期 undefined。这些调用点
+          # 由 kprobes hook 完全取代，直接禁用。
           DEFCONFIG=arch/arm64/configs/cepheus_defconfig
-          for opt in CONFIG_KSU=y CONFIG_KSU_MANUAL_HOOK=y; do
+          for opt in CONFIG_KSU=y CONFIG_KPROBES=y CONFIG_HAVE_KPROBES=y \
+                     CONFIG_KPROBE_EVENTS=y CONFIG_KRETPROBES=y; do
             grep -qx "$opt" "$DEFCONFIG" || echo "$opt" >> "$DEFCONFIG"
           done
+
+          for f in drivers/input/input.c fs/exec.c fs/read_write.c fs/stat.c fs/open.c; do
+            [ -f "$f" ] || continue
+            sed -i 's|^#ifdef CONFIG_KSU$|#if 0 /* legacy KSU hook, replaced by KSU kprobes */|' "$f"
+          done
+          echo '--- 已禁用的旧 hook 文件 ---'
+          grep -rn 'legacy KSU hook' drivers/input/input.c fs/*.c 2>/dev/null | head
 
           # KSU 的 Kbuild 会往 fs/namespace.c 注入 path_umount()/can_umount()，
           # 但 kbuild 解析 drivers/* 时 fs/ 早就编译完了：结果是源文件被改、
@@ -58,11 +67,6 @@ jobs:
           KBUILD=drivers/kernelsu/Kbuild
           sed -i 's|^\$(shell sed -i .*/\^static bool is_mnt_ns_file/i .*|# &|' "$KBUILD"
           sed -i 's|^ccflags-y += -DKSU_HAS_PATH_UMOUNT|# &|' "$KBUILD"
-          echo '--- 注入是否已关闭 ---'
-          grep -n 'is_mnt_ns_file\|KSU_HAS_PATH_UMOUNT' "$KBUILD" || true
-
-          echo "--- defconfig 里的 KSU/KPROBES ---"
-          grep -E 'CONFIG_(KSU|KPROBES|KRETPROBES|HAVE_KPROBES|KPROBE_EVENTS)' "$DEFCONFIG" || true
 
       - name: Install build dependencies
         run: |
