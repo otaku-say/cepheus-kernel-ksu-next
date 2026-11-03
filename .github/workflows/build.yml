@@ -89,6 +89,14 @@ jobs:
           sed -i 's|^CONFIG_KSU=y|# CONFIG_KSU is not set|' "$DEFCONFIG"
           grep -n 'CONFIG_KSU' "$DEFCONFIG" || true
 
+          # drivers/kernelsu 在 crDroid 源码里是未初始化的 submodule（空目录），
+          # 纯内核模式不再 clone KSU 源码，所以必须把这两个引用摘掉，
+          # 否则 kconfig 直接报 can't open file "drivers/kernelsu/Kconfig"。
+          sed -i 's|^source "drivers/kernelsu/Kconfig"|# &|' drivers/Kconfig
+          sed -i 's|^obj-y += kernelsu/$|# &|' drivers/Makefile
+          echo '--- 摘除 kernelsu 引用 ---'
+          grep -n 'kernelsu' drivers/Kconfig drivers/Makefile || echo '(none)'
+
       - name: Install build dependencies
         run: |
           sudo apt-get update
