@@ -57,9 +57,9 @@ jobs:
           export PATH="${{ github.workspace }}/proton-clang/bin:$PATH"
           make O=out ARCH=arm64 cepheus_defconfig
           # 用 LLVM=1 让 make 自动使用 clang 的工具链，避免手写交叉前缀
-          # 不用 LLVM=1：它会让 host 工具（dtc）也用 lld，而 lld 找不到系统 libyaml。
-          # 改回传统交叉参数，host 工具用系统 gcc + libyaml。
-          make -j$(nproc) O=out \
+          # 只构建 Image.gz-dtb：dtbo.img 的生成脚本依赖 python2（Ubuntu 22.04 已移除），
+          # 而 AnyKernel3 只替换 kernel，dtbo 分区保持原样即可。
+          make -j$(nproc) O=out Image.gz-dtb \
             ARCH=arm64 \
             CC=clang \
             CLANG_TRIPLE=aarch64-linux-gnu- \
