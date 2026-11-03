@@ -41,13 +41,25 @@ jobs:
           grep -q 'kernelsu' drivers/Makefile
           grep -q 'drivers/kernelsu/Kconfig' drivers/Kconfig
 
-          # KernelSU 的 kprobes hook 需要 KPROBES/KRETPROBES，crDroid 默认没开。
-          # 不开只能退化成 manual hook，功能受限。
+          # 必须走 manual hook，不能开 KPROBES。crDroid 的 fs/read_write.c 里
+          # 硬编码了 #ifdef CONFIG_KSU 的 ksu_handle_vfs_read() 调用点，而 KSU
+          # 只在 manual hook 分支（#else）里提供这些桩函数；开了 KPROBES 就会
+          # 走 kprobes 分支，桩函数不编译 -> 链接期 undefined reference。
           DEFCONFIG=arch/arm64/configs/cepheus_defconfig
-          for opt in CONFIG_KSU=y CONFIG_KPROBES=y CONFIG_HAVE_KPROBES=y \
-                     CONFIG_KPROBE_EVENTS=y CONFIG_KRETPROBES=y; do
+          for opt in CONFIG_KSU=y CONFIG_KSU_MANUAL_HOOK=y; do
             grep -qx "$opt" "$DEFCONFIG" || echo "$opt" >> "$DEFCONFIG"
           done
+
+          # KSU 的 Kbuild 会往 fs/namespace.c 注入 path_umount()/can_umount()，
+          # 但 kbuild 解析 drivers/* 时 fs/ 早就编译完了：结果是源文件被改、
+          # KSU_HAS_PATH_UMOUNT 被定义，而 .o 里根本没有该函数，链接失败。
+          # 4.14 本来就走 kernel_umount.c 的 #else 分支（ksu_sys_umount），
+          # 所以直接把注入关掉。
+          KBUILD=drivers/kernelsu/Kbuild
+          sed -i 's|^\$(shell sed -i .*/\^static bool is_mnt_ns_file/i .*|# &|' "$KBUILD"
+          sed -i 's|^ccflags-y += -DKSU_HAS_PATH_UMOUNT|# &|' "$KBUILD"
+          echo '--- 注入是否已关闭 ---'
+          grep -n 'is_mnt_ns_file\|KSU_HAS_PATH_UMOUNT' "$KBUILD" || true
 
           echo "--- defconfig 里的 KSU/KPROBES ---"
           grep -E 'CONFIG_(KSU|KPROBES|KRETPROBES|HAVE_KPROBES|KPROBE_EVENTS)' "$DEFCONFIG" || true
