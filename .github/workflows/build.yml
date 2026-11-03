@@ -37,8 +37,9 @@ jobs:
           fi
 
           # init/main.c: 引入头文件并在 start_kernel 里调用 ksu_init()
-          # 源码在 drivers/kernelsu/，用相对路径引入（<ksu/ksu.h> 不在搜索路径里）
-          grep -q 'kernelsu/ksu.h' init/main.c || sed -i '1i #include "../drivers/kernelsu/ksu.h"' init/main.c
+          # 头文件实际在 drivers/kernelsu/include/ksu.h
+          grep -q 'kernelsu/include/ksu.h' init/main.c || \
+            sed -i '1i #include "../drivers/kernelsu/include/ksu.h"' init/main.c
           grep -q 'ksu_init();' init/main.c || sed -i '/asmlinkage __visible void __init start_kernel(void)/a \	trap_init();\n\tksu_init();' init/main.c
 
           # defconfig
